@@ -10,7 +10,10 @@ client = AzureOpenAI(
 )
 
 def generate_followup(user_answer: str) -> str:
-    """ユーザーの回答を元に、深掘りする質問を1つだけ生成し、JSON形式から取り出して返す"""
+    """
+    ユーザーの回答を元に、深掘りする質問を1つだけ生成。
+    必ずJSON形式で返す: {"question": "生成された質問"}
+    """
     
     system_prompt = """
     あなたは経験豊富な面接官です。
@@ -34,12 +37,14 @@ def generate_followup(user_answer: str) -> str:
     content = response.choices[0].message.content.strip()
     try:
         data = json.loads(content)
-        return data["question"]
+        # ここで必ずJSON文字列として返す
+        return json.dumps(data, ensure_ascii=False)
     except Exception:
-        return f"JSON変換に失敗しました: {content}"
+        return json.dumps({"error": "JSON変換に失敗しました", "raw": content}, ensure_ascii=False)
 
 def review_answer(rules: str, answer: str) -> str:
     """面談の注意事項を基に回答を添削する"""
+    
     prompt = f"""
     以下の面談の注意事項を参考に、面接者の回答がルールに違反していないかチェックしてください。
     特に、ルールに違反している場合は、その点を指摘し、修正案を簡潔に提示してください。
@@ -71,6 +76,7 @@ def summarize_and_review_conversation(full_conversation: str) -> str:
     """
     全体の会話履歴を基に、要約と総合的なレビューを生成する
     """
+    
     prompt = f"""
     あなたはプロの面接官です。
     以下に示された面接での全会話履歴を読み、
@@ -97,4 +103,5 @@ def summarize_and_review_conversation(full_conversation: str) -> str:
         temperature=0.7,
         max_tokens=500
     )
+    
     return response.choices[0].message.content.strip()
