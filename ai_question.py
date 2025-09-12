@@ -3,7 +3,6 @@ import json
 from openai import AzureOpenAI
 
 # AzureOpenAIクライアントの初期化
-# 環境変数ではなく、元のコードに記載されていたAPIキーとエンドポイントを直接使用します
 client = AzureOpenAI(
     api_key="ATaUFUNikSdtQUyMebj00TkeQ8R1syEAATbLJADUWJJOH2QJhupnJQQJ99BHACfhMk5XJ3w3AAAAACOGj7Ue",
     api_version="2024-12-01-preview",
@@ -11,18 +10,17 @@ client = AzureOpenAI(
 )
 
 def generate_followup(user_answer: str) -> str:
-    """ユーザーの回答を元に、深掘りする質問を1つだけ生成し、JSON形式で返す"""
+    """ユーザーの回答を元に、深掘りする質問を1つだけ生成し、JSON形式から取り出して返す"""
     
     system_prompt = """
     あなたは経験豊富な面接官です。
     面接者の回答に対して、さらに深掘りするような質問を1つだけ考えてください。
-    質問の答えは尋ねないでください。
-    出力は必ず以下のJSON形式で行ってください。
+    出力は必ず以下のJSON形式にしてください。余計な説明文は出力しないこと。
     {
       "question": "ここに生成した質問を記述"
     }
     """
-    
+
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
@@ -30,11 +28,15 @@ def generate_followup(user_answer: str) -> str:
             {"role": "user", "content": f"面接者の回答: {user_answer}\nこの回答を受けて、次に何を聞きますか？"}
         ],
         temperature=0.7,
-        max_tokens=100,
-        response_format={"type": "json_object"}
+        max_tokens=100
     )
     
-    return response.choices[0].message.content
+    content = response.choices[0].message.content.strip()
+    try:
+        data = json.loads(content)
+        return data["question"]
+    except Exception:
+        return f"JSON変換に失敗しました: {content}"
 
 def review_answer(rules: str, answer: str) -> str:
     """面談の注意事項を基に回答を添削する"""
@@ -63,7 +65,7 @@ def review_answer(rules: str, answer: str) -> str:
         max_tokens=250
     )
 
-    return response.choices[0].message.content
+    return response.choices[0].message.content.strip()
 
 def summarize_and_review_conversation(full_conversation: str) -> str:
     """
@@ -95,4 +97,4 @@ def summarize_and_review_conversation(full_conversation: str) -> str:
         temperature=0.7,
         max_tokens=500
     )
-    return response.choices[0].message.content
+    return response.choices[0].message.content.strip()
