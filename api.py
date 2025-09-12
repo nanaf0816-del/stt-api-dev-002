@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import random
 import os
 import json
-from ai_question import generate_followup, review_answer
+from ai_question import generate_followup, review_answer, summarize_and_review_conversation
 from manual_questions import questions
 
 # FastAPIのインスタンスを作成
@@ -13,28 +13,28 @@ app = FastAPI()
 
 # CORS設定
 origins = [
-    # 既存のオリジンを保持
     "http://localhost",
     "http://localhost:8080",
-    # GitHub
-    "https://nana0816-del.github.io",
+    "https://nanaf0816-del.github.io",
 ]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,  # ワイルドカードからリストに変更
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],  # すべてのHTTPメソッドを許可
-    allow_headers=["*"],  # すべてのヘッダーを許可
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # リクエストボディのデータモデルを定義
-# 音声認識アプリから受け取るデータ構造
 class AnswerRequest(BaseModel):
     user_answer: str
     current_question: str
 
+# 全体の会話履歴を受け取るためのデータモデル
+class ConversationHistoryRequest(BaseModel):
+    conversation_history: list
+
 # 初期質問を返すエンドポイント
-# 面接の開始時に、このURLにアクセスして最初の質問を取得します
 @app.get("/")
 def get_initial_question():
     """初期質問をランダムに返すAPIエンドポイント"""
@@ -42,7 +42,6 @@ def get_initial_question():
     return {"question": initial_question}
 
 # 次の質問を生成するエンドポイント
-# 音声認識アプリから文字起こしされた回答を受け取り、次の質問を生成して返します
 @app.post("/generate_next_question")
 async def generate_next_question(request: AnswerRequest):
     """回答を受け取り、次の質問と添削結果を返すAPIエンドポイント"""
@@ -53,7 +52,6 @@ async def generate_next_question(request: AnswerRequest):
     if not user_answer:
         return {"error": "回答が空です。テキストを入力してください。"}
 
-    # 添削機能の実行
     rules_file_path = "review_rules.txt"
     review_result = None
     if os.path.exists(rules_file_path):
@@ -61,10 +59,8 @@ async def generate_next_question(request: AnswerRequest):
             rules_content = f.read().strip()
             review_result = review_answer(rules_content, user_answer)
     
-    # AIに次の質問をJSON形式で生成させる
     ai_response_json = generate_followup(user_answer)
     
-    # JSON文字列を解析し、質問部分を抽出
     next_question = None
     try:
         ai_data = json.loads(ai_response_json)
@@ -82,6 +78,24 @@ async def generate_next_question(request: AnswerRequest):
         "is_error": next_question.startswith("AIが") or next_question.startswith("AIからの")
     }
 
-# このスクリプトを直接実行した場合に、uvicornサーバーを起動
+# 全体のレビューを生成する新しいエンドポイントを追加
+@app.post("/get_full_review")
+async def get_full_review(request: ConversationHistoryRequest):
+    """
+    全体の会話履歴を受け取り、その全文とレビュー結果を返すAPIエンドポイント
+    """
+    full_conversation_text = ""
+    for item in request.conversation_history:
+        if item["type"] == "question":
+            full_conversation_text += f"質問: {item['text']}\n"
+        elif item["type"] == "answer":
+            full_conversation_text += f"あなたの回答: {item['text']}\n\n"
+    
+    review = summarize_and_review_conversation(full_conversation_text)
+    
+    return {
+        "full_review": review
+    }
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

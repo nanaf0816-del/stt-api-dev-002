@@ -1,17 +1,18 @@
 import os
-import json # JSONを扱うためのライブラリをインポート
+import json
 from openai import AzureOpenAI
 
+# AzureOpenAIクライアントの初期化
+# 環境変数ではなく、元のコードに記載されていたAPIキーとエンドポイントを直接使用します
 client = AzureOpenAI(
     api_key="ATaUFUNikSdtQUyMebj00TkeQ8R1syEAATbLJADUWJJOH2QJhupnJQQJ99BHACfhMk5XJ3w3AAAAACOGj7Ue",
     api_version="2024-12-01-preview",
-    azure_endpoint="https://nnfu-meusquzj-swedencentral.cognitiveservices.azure.com/",
+    azure_endpoint="https://nnfu-meusquzj-swedencentral.cognitives.azure.com/",
 )
 
 def generate_followup(user_answer: str) -> str:
     """ユーザーの回答を元に、深掘りする質問を1つだけ生成し、JSON形式で返す"""
     
-    # プロンプトをJSON形式の出力に特化させる
     system_prompt = """
     あなたは経験豊富な面接官です。
     面接者の回答に対して、さらに深掘りするような質問を1つだけ考えてください。
@@ -30,10 +31,9 @@ def generate_followup(user_answer: str) -> str:
         ],
         temperature=0.7,
         max_tokens=100,
-        response_format={"type": "json_object"} # APIにJSON形式で応答を要求する
+        response_format={"type": "json_object"}
     )
     
-    # 応答をJSON文字列として直接返す
     return response.choices[0].message.content
 
 def review_answer(rules: str, answer: str) -> str:
@@ -63,4 +63,36 @@ def review_answer(rules: str, answer: str) -> str:
         max_tokens=250
     )
 
+    return response.choices[0].message.content
+
+def summarize_and_review_conversation(full_conversation: str) -> str:
+    """
+    全体の会話履歴を基に、要約と総合的なレビューを生成する
+    """
+    prompt = f"""
+    あなたはプロの面接官です。
+    以下に示された面接での全会話履歴を読み、
+    以下の項目について総合的にレビューしてください。
+    
+    1. 会話の全体的な流れと構成の評価
+    2. 回答の論理性、説得力、一貫性
+    3. 改善すべき具体的な点
+    
+    レビューは簡潔に、かつ具体的なフィードバックを含めてください。
+    ---
+    会話履歴:
+    {full_conversation}
+    ---
+    総合レビュー:
+    """
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "あなたはプロの面接官であり、面接者の能力を客観的に評価する役割を担っています。"},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.7,
+        max_tokens=500
+    )
     return response.choices[0].message.content
