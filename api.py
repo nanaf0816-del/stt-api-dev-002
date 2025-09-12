@@ -25,65 +25,70 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# リクエストボディのデータモデルを定義
+# リクエストボディのデータモデル
 class AnswerRequest(BaseModel):
     user_answer: str
     current_question: str
 
-# 全体の会話履歴を受け取るためのデータモデル
 class ConversationHistoryRequest(BaseModel):
     conversation_history: list
 
-# 初期質問を返すエンドポイント
+# 初期質問を返す
 @app.get("/")
 def get_initial_question():
-    """初期質問をランダムに返すAPIエンドポイント"""
     initial_question = random.choice(questions)
     return {"question": initial_question}
 
-# 次の質問を生成するエンドポイント
+# 次の質問を生成
 @app.post("/generate_next_question")
 async def generate_next_question(request: AnswerRequest):
-    """回答を受け取り、次の質問と添削結果を返すAPIエンドポイント"""
-    
     user_answer = request.user_answer
     current_question = request.current_question
 
     if not user_answer:
-        return {"error": "回答が空です。テキストを入力してください。"}
+        return {"error": "回答が空です。テキストを入力してください。", "is_error": True}
 
-    rules_file_path = "review_rules.txt"
+    # 添削結果
     review_result = None
+    rules_file_path = "review_rules.txt"
     if os.path.exists(rules_file_path):
         with open(rules_file_path, "r", encoding="utf-8") as f:
             rules_content = f.read().strip()
             review_result = review_answer(rules_content, user_answer)
-    
-    ai_response_json = generate_followup(user_answer)
-    
-    next_question = None
+
+    # AIに次の質問を生成
     try:
-        ai_data = json.loads(ai_response_json)
-        next_question = ai_data.get("question")
-        if not next_question:
-            next_question = "AIが質問を生成できませんでした。"
-    except json.JSONDecodeError:
-        next_question = "AIからのレスポンスが不正なJSON形式です。"
+        ai_response_json = generate_followup(user_answer)
+        try:
+            ai_data = json.loads(ai_response_json)
+            next_question = ai_data.get("question", "AIが質問を生成できませんでした。")
+            is_error = False
+        except json.JSONDecodeError:
+            next_question = "AIからのレスポンスが不正なJSON形式です。"
+            is_error = True
+    except Exception as e:
+        next_question = "AIの質問生成でエラーが発生しました。"
+        is_error = True
+        return {
+            "current_question": current_question,
+            "user_answer": user_answer,
+            "next_question": next_question,
+            "review": review_result,
+            "is_error": is_error,
+            "error_message": str(e)
+        }
 
     return {
         "current_question": current_question,
         "user_answer": user_answer,
         "next_question": next_question,
         "review": review_result,
-        "is_error": next_question.startswith("AIが") or next_question.startswith("AIからの")
+        "is_error": is_error
     }
 
-# 全体のレビューを生成する新しいエンドポイントを追加
+# 全体レビュー
 @app.post("/get_full_review")
 async def get_full_review(request: ConversationHistoryRequest):
-    """
-    全体の会話履歴を受け取り、その全文とレビュー結果を返すAPIエンドポイント
-    """
     full_conversation_text = ""
     for item in request.conversation_history:
         if item["type"] == "question":
@@ -91,8 +96,11 @@ async def get_full_review(request: ConversationHistoryRequest):
         elif item["type"] == "answer":
             full_conversation_text += f"あなたの回答: {item['text']}\n\n"
     
-    review = summarize_and_review_conversation(full_conversation_text)
-    
+    try:
+        review = summarize_and_review_conversation(full_conversation_text)
+    except Exception as e:
+        review = f"レビュー生成でエラーが発生しました: {e}"
+
     return {
         "full_review": review
     }
