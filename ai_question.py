@@ -4,9 +4,9 @@ from openai import AzureOpenAI
 
 # AzureOpenAIクライアントの初期化
 client = AzureOpenAI(
-    api_key="ATaUFUNikSdtQUyMebj00TkeQ8R1syEAATbLJADUWJJOH2QJhupnJQQJ99BHACfhMk5XJ3w3AAAAACOGj7Ue",
+    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
     api_version="2024-12-01-preview",
-    azure_endpoint="https://nnfu-meusquzj-swedencentral.cognitives.azure.com/",
+    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
 )
 
 def generate_followup(user_answer: str) -> str:
