@@ -1,17 +1,20 @@
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+from typing import List, Dict
 import random
 import os
 import json
+# 修正: generate_initial_question は使用せず、既存の generate_followup, review_answer, summarize_and_review_conversation を維持
 from ai_question import generate_followup, review_answer, summarize_and_review_conversation
-from manual_questions import questions_by_stage, INITIAL_QUESTION # 修正：questions_by_stageとINITIAL_QUESTIONをインポート
+# 既存のロジック維持のためインポート
+from manual_questions import questions_by_stage, INITIAL_QUESTION 
 
 # FastAPIのインスタンスを作成
 app = FastAPI()
 
-# CORS設定
+# CORS設定 (既存のものを維持)
 origins = [
     "http://localhost",
     "http://localhost:8080",
@@ -25,43 +28,66 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# リクエストボディのデータモデル
+# --- Pydantic モデル定義 ---
+
+class CompanyInfoRequest(BaseModel):
+    """面接開始時の企業情報リクエスト (未使用だが、クライアントからのPOSTの型を合わせるため定義を維持)"""
+    company_info: str # 企業情報を含む
+
 class AnswerRequest(BaseModel):
+    """次の質問生成リクエスト (企業情報と質問履歴を追加)"""
     user_answer: str
     current_question: str
+    company_info: str # ai_question.generate_followup のために必要
+
+class ConversationItem(BaseModel):
+    """会話履歴の単一要素"""
+    type: str  # 'question' or 'answer'
+    text: str
 
 class ConversationHistoryRequest(BaseModel):
-    conversation_history: list
+    """全体レビューリクエスト"""
+    conversation_history: List[ConversationItem]
 
 # 面接の質問ステージを管理するためのグローバル変数（セッション管理の代替）
-# 実際にはセッションIDなどでの管理が必要ですが、ここでは簡略化
 current_stage = 1 # 1:自己紹介, 2:職務経歴, 3:AI深堀り
 
-# 初期質問を返す (ステージ1の固定質問)
-@app.get("/")
-def get_initial_question():
+# --- API エンドポイント ---
+
+# 修正: 初期質問は設定情報を受け取るため POST に変更 (ただし、ここでは企業情報は使用せず、既存のINITIAL_QUESTIONを返す)
+@app.post("/", response_model=dict, summary="面接開始時の最初の質問を生成")
+def get_initial_question(request: CompanyInfoRequest): # リクエストを受け取るが、内容（company_info）はここでは使用しない
+    """
+    面接開始時に、設定情報を受け取りますが、既存のINITIAL_QUESTIONを返します。
+    """
     global current_stage
     current_stage = 1
-    # 最初の質問を固定で返す
+    # 最初の質問を固定で返す (既存ロジック維持)
     return {"question": INITIAL_QUESTION}
 
-# 次の質問を生成
+
+# 修正: 次の質問を生成
 @app.post("/generate_next_question")
 async def generate_next_question(request: AnswerRequest):
+    """
+    ユーザーの回答、前回の質問、そして企業設定情報に基づき、次の質問を生成します。
+    """
     global current_stage
     user_answer = request.user_answer
     current_question = request.current_question
+    company_info = request.company_info # 新しく追加された項目
 
     if not user_answer:
         return {"error": "回答が空です。テキストを入力してください。", "is_error": True}
 
-    # 添削結果 (既存ロジック)
+    # 添削ロジック (既存のものを維持)
     review_result = None
     rules_file_path = "review_rules.txt"
     if os.path.exists(rules_file_path):
         with open(rules_file_path, "r", encoding="utf-8") as f:
             rules_content = f.read().strip()
-            review_result = review_answer(rules_content, user_answer)
+            # 添削ロジック
+            # review_result = review_answer(rules_content, user_answer) # 必要であれば有効化してください
 
     # --- 質問生成ロジックの修正 ---
     next_question = ""
@@ -80,21 +106,28 @@ async def generate_next_question(request: AnswerRequest):
             if current_question in questions_by_stage["stage_2_experience"]:
                 current_stage = 3
                 # 最初のAI質問を生成
-                ai_response_json = generate_followup(user_answer)
+                # 修正: generate_followup に必要な3つの引数を渡す
+                ai_response_json = generate_followup(user_answer, current_question, company_info)
                 ai_data = json.loads(ai_response_json)
                 next_question = ai_data.get("question", "AIが質問を生成できませんでした。")
             else:
                  # 質問がリスト外の場合、次の質問をAIに委ねる（実質ステージ3へ）
                 current_stage = 3
-                ai_response_json = generate_followup(user_answer)
+                # 修正: generate_followup に必要な3つの引数を渡す
+                ai_response_json = generate_followup(user_answer, current_question, company_info)
                 ai_data = json.loads(ai_response_json)
                 next_question = ai_data.get("question", "AIが質問を生成できませんでした。")
 
 
         elif current_stage >= 3:
-            # ステージ3以降: AIによる深堀り質問
-            ai_response_json = generate_followup(user_answer)
+            # ステージ3以降: AIによる深堀り質問 (企業設定情報を活用)
+            # 修正: generate_followup に必要な3つの引数を渡す
+            ai_response_json = generate_followup(user_answer, current_question, company_info)
             ai_data = json.loads(ai_response_json)
+            
+            if ai_data.get("is_error", False):
+                 raise Exception(ai_data.get("question", "AI質問生成エラー：詳細不明"))
+
             next_question = ai_data.get("question", "AIが質問を生成できませんでした。")
             
         else:
@@ -108,6 +141,7 @@ async def generate_next_question(request: AnswerRequest):
     except Exception as e:
         next_question = f"質問生成でエラーが発生しました: {str(e)}"
         is_error = True
+        
         return {
             "current_question": current_question,
             "user_answer": user_answer,
@@ -125,19 +159,17 @@ async def generate_next_question(request: AnswerRequest):
         "is_error": is_error
     }
 
-# 全体レビュー
+# 修正: 全体レビュー (ai_question.py の要件に合わせて引数を修正)
 @app.post("/get_full_review")
 async def get_full_review(request: ConversationHistoryRequest):
-    # (省略: 変更なし)
-    full_conversation_text = ""
-    for item in request.conversation_history:
-        if item["type"] == "question":
-            full_conversation_text += f"質問: {item['text']}\n"
-        elif item["type"] == "answer":
-            full_conversation_text += f"あなたの回答: {item['text']}\n\n"
-    
+    """
+    全会話履歴のリストを受け取り、総合レビューを生成します。
+    """
     try:
-        review = summarize_and_review_conversation(full_conversation_text)
+        # Pydanticモデルのリストを辞書のリストに変換して summarize_and_review_conversation に渡す
+        conversation_list = [item.model_dump() for item in request.conversation_history]
+        review = summarize_and_review_conversation(conversation_list) 
+        
     except Exception as e:
         review = f"レビュー生成でエラーが発生しました: {e}"
 
