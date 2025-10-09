@@ -62,6 +62,7 @@ def get_initial_question(request: CompanyInfoRequest): # リクエストを受�
     """
     global current_stage
     current_stage = 1
+    print(f"--- API Call: / --- Current Stage: {current_stage}, Received Info: {request.company_info}") # デバッグ用
     # 最初の質問を固定で返す (既存ロジック維持)
     return {"question": INITIAL_QUESTION}
 
@@ -76,6 +77,9 @@ async def generate_next_question(request: AnswerRequest):
     user_answer = request.user_answer
     current_question = request.current_question
     company_info = request.company_info # 新しく追加された項目
+
+    print(f"--- API Call: /generate_next_question --- Stage: {current_stage}") # デバッグ用
+    print(f"Answer: {user_answer[:20]}..., Company Info: {company_info}") # デバッグ用
 
     if not user_answer:
         return {"error": "回答が空です。テキストを入力してください。", "is_error": True}
@@ -165,6 +169,7 @@ async def get_full_review(request: ConversationHistoryRequest):
     """
     全会話履歴のリストを受け取り、総合レビューを生成します。
     """
+    print("--- API Call: /get_full_review ---") # デバッグ用
     try:
         # Pydanticモデルのリストを辞書のリストに変換して summarize_and_review_conversation に渡す
         conversation_list = [item.model_dump() for item in request.conversation_history]
