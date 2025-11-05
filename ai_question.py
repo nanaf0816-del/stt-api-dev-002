@@ -52,27 +52,42 @@ def generate_initial_question(company_info: str) -> str:
 
 
 # ----------------------------------------------------
-# 修正: generate_followup に引数を追加し、プロンプトに組み込む
+# 修正: スキルシート情報を活用した質問生成
 # ----------------------------------------------------
 def generate_followup(user_answer: str, current_question: str, company_info: str) -> str:
     """
-    企業情報と会話の流れを考慮し、深掘りする質問を1つだけ生成。
+    企業情報、スキルシート情報、会話の流れを考慮し、深掘りする質問を1つだけ生成。
     必ずJSON形式で返す: {"question": "生成された質問"}
+    
+    Args:
+        user_answer: ユーザーの回答
+        current_question: 前回の質問
+        company_info: 企業情報とスキルシート情報を結合したテキスト
     """
     system_prompt = (
-        "あなたは経験豊富な面接官です。以下の企業情報と、前回の質問と回答を考慮し、さらに深掘りするような質問を1つだけ考えてください。\n"
+        "あなたは経験豊富な面接官です。以下の情報を活用して、候補者に深掘りする質問を1つだけ生成してください。\n\n"
+        "【活用する情報】\n"
+        "- 企業情報・面接設定\n"
+        "- 候補者のスキルシート情報（職務経歴、保有スキル、プロジェクト経験など）\n"
+        "- 前回の質問と候補者の回答\n\n"
+        "【質問生成のポイント】\n"
+        "- スキルシートに記載されている具体的な経験やスキルに言及する\n"
+        "- 候補者の回答とスキルシートの内容の整合性を確認する質問も有効\n"
+        "- プロジェクトの詳細や役割について深掘りする\n"
+        "- 保有技術の習熟度や実務での活用方法を聞く\n"
+        "- 作業工程での具体的な取り組みや課題解決の経験を聞く\n\n"
         "出力は必ず以下のJSON形式にしてください。余計な説明文は出力しないこと。\n"
         "{\n"
         "  \"question\": \"ここに生成した質問を記述\"\n"
         "}"
     )
     
-    # 企業情報をプロンプトに組み込む
+    # 企業情報にスキルシート情報が含まれている
     user_prompt = (
-        f"面接設定情報:\n{company_info}\n\n"
+        f"面接設定情報・スキルシート情報:\n{company_info}\n\n"
         f"前回の質問: {current_question}\n"
         f"面接者の回答: {user_answer}\n\n"
-        "この一連の流れを受けて、次に何を聞きますか？"
+        "この一連の流れとスキルシート情報を受けて、次に何を聞きますか？"
     )
 
     try:
@@ -127,7 +142,7 @@ def review_answer(rules: str, answer: str) -> str:
     return response.choices[0].message.content.strip()
 
 # ----------------------------------------------------
-# 修正: summarize_and_review_conversation (引数名を修正し、より適切な入力形式に対応)
+# 修正なし: summarize_and_review_conversation
 # ----------------------------------------------------
 def summarize_and_review_conversation(conversation_history: List[Dict[str, str]]) -> str:
     """
